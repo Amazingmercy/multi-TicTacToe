@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tic Tac Toe Multiplayer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f4f4;
+            text-align: center;
+            padding-top: 5px;
+        }
+
+        h1 {
+            color: #333;
+        }
+
+        #controls {
+            margin-bottom: 20px;
+        }
+
+        input,
+        button {
+            margin: 8px;
+            padding: 10px;
+            font-size: 1rem;
+        }
+
+        #game-id-display {
+            font-weight: bold;
+            margin-top: 10px;
+        }
+
+        #game-board {
+            display: grid;
+            grid-template-columns: repeat(3, 100px);
+            grid-template-rows: repeat(3, 100px);
+            gap: 5px;
+            justify-content: center;
+            margin: 25px auto;
+        }
+
+        .cell {
+            width: 100px;
+            height: 100px;
+            background-color: #fff;
+            font-size: 2.5rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            border: 2px solid #333;
+            user-select: none;
+        }
+
+        .cell:hover {
+            background-color: #f0f0f0;
+        }
+
+        #status {
+            margin-top: 20px;
+            font-size: 1.2rem;
+            color: #555;
+        }
+
+        #scoreboard {
+            margin-top: 10px;
+            font-size: 1.2rem;
+            color: #333;
+            font-weight: bold;
+            background-color: #fff;
+            padding: 7px;
+            border-radius: 5px;
+            border: 2px solid #ccc;
+            display: inline-block;
+            text-align: center;
+        }
+
+        #scoreboard span {
+            margin: 0 10px;
+            font-size: 1.5rem;
+            color: #333;
+        }
+
+        #scoreboard .wins {
+            color: green;
+        }
+
+        #scoreboard .losses {
+            color: red;
+        }
+
+        #post-game-options {
+            margin-top: 20px;
+            display: none;
+        }
+
+        #post-game-options button {
+            margin: 0 10px;
+            padding: 10px 20px;
+            font-size: 1rem;
+        }
+
+        #rematch-button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+        }
+
+        #quit-button {
+            background-color: #f44336;
+            color: white;
+            border: none;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Multiplayer Tic Tac Toe</h1>
+
+    <div id="controls">
+        <button onclick="createGame()">Create Game</button>
+        <input type="text" id="gameIdInput" placeholder="Enter Game ID" />
+        <button onclick="joinGame()">Join Game</button>
+        <button onclick="copyGameId()">Copy Game ID</button>
+        <div id="game-id-display"></div>
+    </div>
+
+    <div id="status">Create or join a game to start.</div>
+    <div id="scoreboard">
+        <span class="wins" id="wins">Wins: 0</span> |
+        <span class="losses" id="losses">Losses: 0</span>
+    </div>
+
+    <div id="game-board"></div>
+
+    <div id="post-game-options">
+        <button id="rematch-button">Rematch</button>
+        <button id="quit-button">Quit Game</button>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io("http://localhost:3000");
+
+        const board = Array(9).fill("");
+        let currentPlayer = "X";
+        let isMyTurn = false;
+        let gameId = null;
+        let score = { wins: 0, losses: 0 };
+        let rematchRequested = false;
+
+        // DOM elements
+        const boardEl = document.getElementById("game-board");
+        const statusEl = document.getElementById("status");
+        const gameIdInput = document.getElementById("gameIdInput");
+        const gameIdDisplay = document.getElementById("game-id-display");
+        const scoreboardEl = document.getElementById("scoreboard");
+        const postGameOptionsEl = document.getElementById("post-game-options");
+        const rematchButton = document.getElementById("rematch-button");
+        const quitButton = document.getElementById("quit-button");
+
+        // Add event listeners for game control buttons
+        rematchButton.addEventListener('click', requestRematch);
+        quitButton.addEventListener('click', quitGame);
+
+        function renderBoard() {
+            boardEl.innerHTML = "";
+            board.forEach((cell, i) => {
+                const div = document.createElement("div");
+                div.className = "cell";
+                div.textContent = cell;
+                div.addEventListener("click", () => handleMove(i));
+                boardEl.appendChild(div);
+            });
+        }
+
+        function createGame() {
+            const generatedId = Math.random().toString(36).substr(2, 6).toUpperCase();
+            gameIdInput.value = generatedId;
+            joinGame();
+        }
+
+        function copyGameId() {
+            if (!gameId) return alert("No game ID yet.");
+            navigator.clipboard.writeText(gameId).then(() => {
+                alert(`Copied Game ID: ${gameId}`);
+            });
+        }
+
+        function joinGame() {
+            gameId = gameIdInput.value.trim().toUpperCase();
+            if (!gameId) return alert("Please enter a game ID");
+            socket.emit("joinGame", gameId);
+            gameIdDisplay.textContent = `Game ID: ${gameId}`;
+            statusEl.textContent = "Waiting for opponent...";
+            hidePostGameOptions();
+        }
+
+        function handleMove(index) {
+            if (!isMyTurn || board[index] !== "") return;
+            board[index] = currentPlayer;
+            renderBoard();
+            socket.emit("makeMove", { gameId, index, symbol: currentPlayer });
+            isMyTurn = false;
+            statusEl.textContent = "Waiting for opponent...";
+        }
+
+        function requestRematch() {
+            if (!gameId) return;
+            rematchRequested = true;
+            socket.emit("requestRematch", gameId);
+            statusEl.textContent = "Waiting for opponent to accept rematch...";
+            rematchButton.disabled = true;
+        }
+
+        function quitGame() {
+            if (!gameId) return;
+            socket.emit("quitGame", gameId);
+            resetGame();
+            statusEl.textContent = "Game ended. Create or join a new game.";
+            hidePostGameOptions();
+        }
+
+        function showPostGameOptions() {
+            postGameOptionsEl.style.display = "block";
+            rematchButton.disabled = rematchRequested;
+        }
+
+        function hidePostGameOptions() {
+            postGameOptionsEl.style.display = "none";
+            rematchButton.disabled = false;
+            rematchRequested = false;
+        }
+
+        function updateScoreboard() {
+            document.getElementById('wins').textContent = `Wins: ${score.wins}`;
+            document.getElementById('losses').textContent = `Losses: ${score.losses}`;
+        }
+
+        function resetGame() {
+            board.fill("");
+            renderBoard();
+        }
+
+        // Socket event handlers
+        socket.on("gameStart", (symbol) => {
+            currentPlayer = symbol;
+            isMyTurn = symbol === "X";
+            statusEl.textContent = isMyTurn ? "Your turn" : "Opponent's turn";
+            renderBoard();
+            hidePostGameOptions();
+        });
+
+        socket.on("opponentMove", ({ index, symbol }) => {
+            board[index] = symbol;
+            isMyTurn = true;
+            statusEl.textContent = "Your turn";
+            renderBoard();
+        });
+
+        socket.on("gameFull", () => {
+            alert("Game is full");
+        });
+
+        socket.on('scoreUpdate', (newScore) => {
+            score = newScore; // Update local score
+            updateScoreboard();
+        });
+
+        socket.on("gameOver", (winner) => {
+            if (winner) {
+                if (winner === currentPlayer) {
+                    statusEl.textContent = "You win!";
+                } else {
+                    statusEl.textContent = "You lose!";
+                }
+            } else {
+                statusEl.textContent = "It's a draw!";
+            }
+            isMyTurn = false;
+            showPostGameOptions();
+        });
+
+        socket.on("rematchRequested", () => {
+            statusEl.textContent = "Opponent wants a rematch!";
+            showPostGameOptions();
+        });
+
+        socket.on("rematchStart", (symbol) => {
+            resetGame();
+            currentPlayer = symbol;
+            isMyTurn = symbol === "X";
+            statusEl.textContent = isMyTurn ? "Your turn" : "Opponent's turn";
+            rematchRequested = false;
+            hidePostGameOptions();
+        });
+
+        socket.on("opponentQuit", () => {
+            statusEl.textContent = "Opponent quit the game.";
+            isMyTurn = false;
+            hidePostGameOptions();
+        });
+
+        socket.on("opponentDisconnected", () => {
+            statusEl.textContent = "Opponent disconnected.";
+            isMyTurn = false;
+            hidePostGameOptions();
+        });
+
+        // Initialize the board on page load
+        renderBoard();
+    </script>
+</body>
+
+</html>
