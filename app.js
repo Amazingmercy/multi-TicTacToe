@@ -7,8 +7,9 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: '*', // Allow all origins for testing; restrict in production
-  },
+    origin: "https://multi-tictactoe.onrender.com",
+    methods: ["GET", "POST"]
+  }
 });
 
 app.use(cors());
